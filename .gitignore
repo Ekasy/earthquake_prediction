@@ -1,0 +1,22 @@
+# python
+__pycache__/
+venv/
+.venv/
+
+
+# vscode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+.history/
+*.vsix
+
+
+# projects
+test_data/*
+predictions/*
+models/data/*
+!models/data/README.md
