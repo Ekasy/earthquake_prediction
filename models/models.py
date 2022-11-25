@@ -1,10 +1,12 @@
-import os
-import joblib
+import models.model_wrappers as mw
 
 
 # model name to model file (should placed to data folder) mapper
 _models = {
-    'random_forest': 'random_forest.pkl',
+    'random_forest': {
+        'model_files': ['random_forest.pkl',],
+        'model_wrapper': mw.JoblibWrapper
+    },
 }
 
 
@@ -12,15 +14,7 @@ def get_allowed_models() -> list:
     return list(_models.keys())
 
 
-def load_all_models() -> dict:
-    models = {}
-    for model_name, model_file in _models.items():
-        models[model_name] = os.path.join(os.environ.get('PROJECT_DIR'), 'models/data', model_file)
-    return models
-
-
-def load_model(model_name: str):
-    if model_file := _models.get(model_name):
-        path = os.path.join(os.environ.get('PROJECT_DIR'), 'models', 'data', model_file)
-        return joblib.load(path)
+def get_model(model_name: str):
+    if model_node := _models.get(model_name):
+        return model_node['model_wrapper'](model_node['model_files'])
     return None
