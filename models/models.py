@@ -19,20 +19,8 @@ _models = {
         'model_wrapper': mw.TorchWrapper,
     },
     'xgboost': {
-        'columns': [
-            'Latitude',
-            'Longitude',
-            'Type',
-            'Depth',
-            'Magnitude',
-            'Magnitude Type',
-            'Root Mean Square',
-            'Source',
-            'Location Source',
-            'Magnitude Source', 
-            'Status',
-        ],
-        'model_files': ['xgboost'],
+        'columns': [],
+        'model_files': ['final_model_Magnitude_seed', 'final_model_Depth_seed'],
         'additional_args': {
             'seed_order': [687, 749, 577, 158, 755, 904, 15, 187, 940, 606],
             'xgb_params': {
@@ -49,7 +37,7 @@ _models = {
                 'objective': 'reg:squarederror',
                 'verbosity': 0,
                 'nthread': 12,
-                'gamma': 0.5
+                'gamma': 0.5,
             },
         },
         'model_wrapper': mw.XGBoostWrapper,
