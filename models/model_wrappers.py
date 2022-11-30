@@ -177,3 +177,4 @@ class XGBoostWrapper(BaseWrapper):
             score += prediction
         score /= len(self._additional_args['seed_order'])
         return score
+
