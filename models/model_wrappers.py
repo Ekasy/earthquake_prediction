@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from copy import copy
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import TensorDataset, DataLoader
 
@@ -147,33 +146,30 @@ class TorchWrapper(BaseWrapper):
 class XGBoostWrapper(BaseWrapper):
     def __init__(self, model_files: list, columns: list, additional_args):
         super().__init__(model_files, columns, additional_args)
-        self._additional_args = additional_args
-        xggb_params = self._additional_args['xgb_params']
-        xgb_params_list = []
-        for seed in self._additional_args['seed_order']:
-            xp = copy(xggb_params)
-            xp['random_seed'] = seed
-            xgb_params_list.append(xp)
-        self._custom_model = GBModel(n_models=10, early_stopping_rounds=40, use_cv_train=True, cv_folds=5,
-                                     params_list=xgb_params_list)
+        self._customize_data_predict = xgb.DMatrix
 
     def load(self):
         for model_file in self._model_files:
+            local_models = []
             for seed in self._additional_args['seed_order']:
                 path = os.path.join(os.environ.get('PROJECT_DIR'), 'models', 'data', f'{model_file}_{seed}')
                 bst = xgb.Booster({'nthread': 4})
                 bst.load_model(path)
-                self._models.append(bst)
+                local_models.append(bst)
+            self._models.append(local_models)
 
     def prepare(self, dataset: str):
         self._dataset = pd.read_csv(dataset)
         self._dataset = self._dataset.drop(['Magnitude', 'Depth'], axis=1)
 
     def predict(self):
-        data_to_predict = self._custom_model.get_customize_data_predict()(self._dataset)
-        score = pd.Series(np.zeros((self._dataset.shape[0],)), index=self._dataset.index)
-        for model in self._models:
-            prediction = model.predict(data_to_predict)
-            score += prediction
-        score /= len(self._additional_args['seed_order'])
-        return score
+        predictions = []
+        for local_models in self._models:
+            data_to_predict = self._customize_data_predict(self._dataset)
+            score = pd.Series(np.zeros((self._dataset.shape[0],)), index=self._dataset.index)
+            for model in local_models:
+                prediction = model.predict(data_to_predict)
+                score += prediction
+            score /= len(self._additional_args['seed_order'])
+            predictions.append(score)
+        return np.array(predictions).transpose()
