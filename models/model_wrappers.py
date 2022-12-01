@@ -173,3 +173,4 @@ class XGBoostWrapper(BaseWrapper):
             score /= len(self._additional_args['seed_order'])
             predictions.append(score)
         return np.array(predictions).transpose()
+
