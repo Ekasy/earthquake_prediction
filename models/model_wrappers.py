@@ -11,8 +11,6 @@ import xgboost as xgb
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import TensorDataset, DataLoader
 
-from models.helpers import GBModel
-
 
 class BaseWrapper:
     _TARGET_COLUMNS = [
@@ -31,6 +29,7 @@ class BaseWrapper:
         self._additional_args = additional_args
         self._models = []
         self._dataset = None
+        self._saved_dataset = None
 
     def _read_dataset(self, dataset_file):
         dataset = pd.read_csv(dataset_file)
@@ -41,6 +40,28 @@ class BaseWrapper:
             raise Exception(f'Check dataset columns: {", ".join(col for col in self._columns)} are required!')
         return dataset[self._columns]
 
+    def _filter_dataset(self, longitude_min, longitude_max, latitude_min, latitude_max):
+        latitude_mask = (self._dataset['Latitude'] >= latitude_min) & (self._dataset['Latitude'] <= latitude_max)
+        longitude_mask = (self._dataset['Longitude'] >= longitude_min) & (self._dataset['Longitude'] <= longitude_max)
+        self._dataset = self._dataset[(latitude_mask) & (longitude_mask)]
+        self._dataset = self._dataset.groupby(['Latitude', 'Longitude']).sum().reset_index()
+
+    def _generate_future_timestamp_sample(self, days):
+        now_ts = int(time.time())
+        full_dataset = None
+        for i in range(days):
+            sub_dt = self._dataset.copy()
+            for _ in sub_dt['Timestamp']:
+                sub_dt['Timestamp'] = now_ts + (i + 1) * 60 * 60 * 24
+            if full_dataset is not None:
+                full_dataset = pd.concat([full_dataset, sub_dt])
+            else:
+                full_dataset = sub_dt.copy()
+        self._dataset = full_dataset
+
+    def _save_dataset(self):
+        self._saved_dataset = self._dataset[['Timestamp', 'Longitude', 'Latitude']]
+
     def _load(self, path):
         raise NotImplementedError()
 
@@ -49,11 +70,17 @@ class BaseWrapper:
             path = os.path.join(os.environ.get('PROJECT_DIR'), 'models', 'data', model_file)
             self._models.append(self._load(path))
 
-    def prepare(self, dataset: str):
+    def prepare(self, dataset: str, longitude_min, longitude_max, latitude_min, latitude_max, days):
         raise NotImplementedError()
 
     def predict(self):
         raise NotImplementedError()
+
+    def union_data(self, predictions):
+        predictions['Timestamp'] = pd.Series(self._saved_dataset['Timestamp'].values.astype(float)).values
+        predictions['Longitude'] = self._saved_dataset['Longitude'].values
+        predictions['Latitude'] = self._saved_dataset['Latitude'].values
+        return predictions
 
 
 class JoblibWrapper(BaseWrapper):
@@ -63,7 +90,7 @@ class JoblibWrapper(BaseWrapper):
     def _load(self, path):
         return joblib.load(path)
 
-    def prepare(self, dataset_file: str):
+    def prepare(self, dataset_file: str, longitude_min, longitude_max, latitude_min, latitude_max, days):
         self._dataset = self._read_dataset(dataset_file)
         timestamp = []
         for d, t in zip(self._dataset['Date'], self._dataset['Time']):
@@ -77,6 +104,9 @@ class JoblibWrapper(BaseWrapper):
         self._dataset['Timestamp'] = timeStamp.values
         final_data = self._dataset.drop(['Date', 'Time'], axis=1)
         self._dataset = final_data[final_data.Timestamp != 'ValueError']
+        self._filter_dataset(longitude_min, longitude_max, latitude_min, latitude_max)
+        self._generate_future_timestamp_sample(days)
+        self._save_dataset()
 
     def predict(self):
         predictions = []
@@ -106,8 +136,12 @@ class TorchWrapper(BaseWrapper):
         y_tnsr = torch.tensor(y_train.values, dtype=torch.float32)
         return TensorDataset(X_tnsr, y_tnsr)
 
-    def prepare(self, dataset_file: str):
+    def prepare(self, dataset_file: str, longitude_min, longitude_max, latitude_min, latitude_max, days):
         self._dataset = self._read_dataset(dataset_file)
+        self._filter_dataset(longitude_min, longitude_max, latitude_min, latitude_max)
+        self._generate_future_timestamp_sample(days)
+        self._save_dataset()
+
         X = self._dataset.drop(self._TARGET_COLUMNS, axis=1)
         y_m = self._dataset['Magnitude']
         y_d = self._dataset['Depth']
@@ -158,7 +192,7 @@ class XGBoostWrapper(BaseWrapper):
                 local_models.append(bst)
             self._models.append(local_models)
 
-    def prepare(self, dataset: str):
+    def prepare(self, dataset: str, longitude_min, longitude_max, latitude_min, latitude_max, days):
         self._dataset = pd.read_csv(dataset)
         self._dataset = self._dataset.drop(['Magnitude', 'Depth'], axis=1)
 
@@ -173,4 +207,3 @@ class XGBoostWrapper(BaseWrapper):
             score /= len(self._additional_args['seed_order'])
             predictions.append(score)
         return np.array(predictions).transpose()
-
